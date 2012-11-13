@@ -3,7 +3,7 @@
 Plugin Name: Auto Upload Images
 Plugin URI: http://wordpress.org/extend/plugins/auto-upload-images/
 Description: Automatically upload external images of a post to wordpress upload directory
-Version: 1.0
+Version: 1.1
 Author: Ali Irani
 Author URI: http://p30design.net
 License: GPLv2 or later
@@ -28,10 +28,12 @@ function wp_auto_upload_images($post_id) {
 	
 	if($images_url) {
 		foreach ($images_url as $image_url) {
-			if(!wp_is_myurl($image_url) && wp_save_image($image_url))
-				$new_images_url[] = wp_save_image($image_url);
-			else
+			if(!wp_is_myurl($image_url) && $new_image_url = wp_save_image($image_url, $post_id)) {
+				$new_images_url[] = $new_image_url;
+				unset($new_image_url);
+			} else {
 				$new_images_url[] = $image_url;
+			}
 		}
 	
 		$total = count($new_images_url);
@@ -88,18 +90,24 @@ function wp_is_myurl( $url ) {
 
 /**
  * Save image on wp_upload_dir
+ * Add image to Media Library and attach to post
  *
  * @param $url
+ * @param $post_id
  * @return new $url or false
  */
-function wp_save_image($url) {
-	if(preg_match('/\/([a-z0-9\-_\+]+\.[a-z0-9]+)$/i', $url, $m))
+function wp_save_image($url, $post_id = 0) {
+	if(preg_match('/\/([a-z0-9\-_\+\.]+\.[a-z0-9]+)$/i', $url, $m))
 		$image_name = $m[1];
 	else 
 		return false;
 	
 	$upload_dir = wp_upload_dir(date('Y/m'));
 	$path = $upload_dir['path'] . '/' . $image_name;
+	$new_image_url = $upload_dir['url'] . '/' . $image_name;
+	
+	if(file_exists($path))
+		return false;
 	
 	if(function_exists('curl_init')) {
 		$ch = curl_init($url);
@@ -108,7 +116,18 @@ function wp_save_image($url) {
 		curl_close($ch);
 		file_put_contents($path, $data);
 		
-		return $upload_dir['url'] . '/' . $image_name;
+		$wp_filetype = wp_check_filetype($new_image_url);
+		$filename = $upload_dir['path'];
+		$attachment = array(
+			'guid' => $new_image_url, 
+			'post_mime_type' => $wp_filetype['type'],
+			'post_title' => preg_replace('/\.[^.]+$/', '', basename($new_image_url)),
+			'post_content' => '',
+			'post_status' => 'inherit'
+		);
+		wp_insert_attachment($attachment, $new_image_url, $post_id);
+		
+		return $new_image_url;
 	} else {
 		return false;
 	}
