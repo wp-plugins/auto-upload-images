@@ -1,16 +1,16 @@
 === Auto Upload Images ===
 Contributors: airani
 Donate link: http://p30design.net/about/contact
-Tags: upload, auto, image
+Tags: upload, auto, image, automaticly
 Requires at least: 2.7
 Tested up to: 3.4.2
-Stable tag: tag
+Stable tag: trunk
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
 == Description ==
 
-Automatic upload external images of content to upload internal server
+When you want to save post, this plugin search for images url which exists in post and automatically upload external images to wordpress upload directory and replace external link with your link.
 
 == Installation ==
 
