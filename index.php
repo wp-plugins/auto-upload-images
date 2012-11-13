@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: Auto Upload Images
-Plugin URI: http://p30design.net
+Plugin URI: http://wordpress.org/extend/plugins/auto-upload-images/
 Description: Automatically upload external images of a post to wordpress upload directory
 Version: 1.0
 Author: Ali Irani
