@@ -2,7 +2,7 @@
 /*
 Plugin Name: Auto Upload Images
 Plugin URI: http://p30design.net
-Description: Automatic upload external images of content to upload internal server
+Description: Automatically upload external images of a post to wordpress upload directory
 Version: 1.0
 Author: Ali Irani
 Author URI: http://p30design.net
@@ -12,7 +12,7 @@ License: GPLv2 or later
 add_action( 'save_post', 'wp_auto_upload_images' );
 
 /**
- * Automatic upload external images of content to upload internal server
+ * Automatically upload external images of a post to wordpress upload directory
  *
  * @param $post_id
  */
