@@ -1,9 +1,9 @@
 <?php
 /*
 Plugin Name: Auto Upload Images
-Plugin URI: http://wordpress.org/extend/plugins/auto-upload-images/
+Plugin URI: http://p30design.net/1391/08/wp-auto-upload-images.html
 Description: Automatically upload external images of a post to wordpress upload directory
-Version: 1.1
+Version: 1.2
 Author: Ali Irani
 Author URI: http://p30design.net
 License: GPLv2 or later
@@ -16,15 +16,21 @@ add_action( 'save_post', 'wp_auto_upload_images' );
  *
  * @param $post_id
  */
-function wp_auto_upload_images($post_id) {
+function wp_auto_upload_images( $post_id ) {
 
 	if ( defined('DOING_AUTOSAVE') && DOING_AUTOSAVE ) 
+		return;
+		
+	if ( defined( 'DOING_AJAX' ) && DOING_AJAX ) 
+        return;
+	
+	if ( false !== wp_is_post_revision($post_id) )
 		return;
 		
 	global $wpdb;
 	
 	$content = $wpdb->get_var( "SELECT post_content FROM wp_posts WHERE ID='$post_id' LIMIT 1" );
-	$images_url = wp_get_images_url($post_id, $content);
+	$images_url = wp_get_images_url($content);
 	
 	if($images_url) {
 		foreach ($images_url as $image_url) {
@@ -38,7 +44,7 @@ function wp_auto_upload_images($post_id) {
 	
 		$total = count($new_images_url);
 		
-		for($i=0; $i<=$total-1; $i++) {
+		for ($i = 0; $i <= $total-1; $i++) {
 			$content = preg_replace('/'. preg_quote($images_url[$i], '/') .'/', $new_images_url[$i], $content);
 		}
 		
@@ -51,16 +57,19 @@ function wp_auto_upload_images($post_id) {
 /**
  * Detect url of images which exists in content
  *
- * @param $post_id
+ * @param $content
  * @return array of urls or false
  */
-function wp_get_images_url( $post_id, $content ) {
+function wp_get_images_url( $content ) {
 	preg_match_all('/<img[^>]*src=("|\')([^(\?|#|"|\')]*)(\?|#)?[^("|\')]*("|\')[^>]*\/>/', $content, $urls, PREG_SET_ORDER);
 	
 	if(is_array($urls)) {
 		foreach ($urls as $url)
 			$images_url[] = $url[2];
 	}
+
+	$images_url = array_unique($images_url);
+	rsort($images_url);
 	
 	return isset($images_url) ? $images_url : false;
 }
@@ -72,20 +81,24 @@ function wp_get_images_url( $post_id, $content ) {
  * @return true or false
  */
 function wp_is_myurl( $url ) {
-	$url_pattern = "/https?:\/\/((.*?)\.)*([a-z0-9\-]+\.[a-z]+)\/?.*/i";
-	$myurl = get_bloginfo('url');
+	$url = wp_get_base_url($url);
+	$myurl = wp_get_base_url(get_bloginfo('url'));
 	
-	if(preg_match($url_pattern, $myurl, $m))
-		$myurl = $m[3];
-	else
-		return false;
+	return ($myurl == $url) ? true : false;
+}
+
+/**
+ * Give a $url and return Base of a $url
+ *
+ * @param $url
+ * @return $url
+ */
+function wp_get_base_url( $url ) {
+	$url_pattern = "/^(www(2|3)?\.)/i";
+	$url = parse_url($url, PHP_URL_HOST);
+	$temp = preg_split('/^(www(2|3)?\.)/i', $url, -1, PREG_SPLIT_NO_EMPTY);
 	
-	if(preg_match($url_pattern, $url, $m))
-		$target_url = $m[3];
-	else
-		return false;
-	
-	return ($myurl == $target_url) ? true : false;
+	return $url = $temp[0];
 }
 
 /**
@@ -105,13 +118,28 @@ function wp_save_image($url, $post_id = 0) {
 	$upload_dir = wp_upload_dir(date('Y/m'));
 	$path = $upload_dir['path'] . '/' . $image_name;
 	$new_image_url = $upload_dir['url'] . '/' . $image_name;
+	$file_exists = true;
+	$i = 0;
 	
-	if(file_exists($path))
-		return false;
+	while ( $file_exists ) {
+		if ( file_exists($path) ) {
+			if ( wp_get_exfilesize($url) == filesize($path) ) {
+				return false;
+			} else {
+				$i++;
+				$path = $upload_dir['path'] . '/' . $i . '_' . $image_name;	
+				$new_image_url = $upload_dir['url'] . '/' . $i . '_' . $image_name;
+			}
+		} else {
+			$file_exists = false;
+		}
+	}
 	
 	if(function_exists('curl_init')) {
 		$ch = curl_init($url);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);     
+		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2); 
 		$data = curl_exec($ch);
 		curl_close($ch);
 		file_put_contents($path, $data);
@@ -131,4 +159,27 @@ function wp_save_image($url, $post_id = 0) {
 	} else {
 		return false;
 	}
+}
+
+/**
+ * return size of external file
+ *
+ * @param $file
+ * @return $size
+ */
+function wp_get_exfilesize( $file ) {
+	$ch = curl_init($file);
+    curl_setopt($ch, CURLOPT_NOBODY, true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HEADER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);     
+	curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2); 
+    $data = curl_exec($ch);
+    curl_close($ch);
+
+    if (preg_match('/Content-Length: (\d+)/', $data, $matches))
+        return $contentLength = (int)$matches[1];
+	else
+		return false;
 }

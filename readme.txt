@@ -11,8 +11,9 @@ License URI: http://www.gnu.org/licenses/gpl-2.0.html
 == Description ==
 
 When you want to save post, this plugin search for images url which exists in post and automatically upload external images to wordpress upload directory and replace external link with your link.
+Automatically add image to Media Library and attach to post.
 
-Automatically add image to Media Library and Attach to post.
+<a href="http://p30design.net/1391/08/wp-auto-upload-images.html" title="plugin page" target="_blank">Official Plugin Page</a>
 
 == Installation ==
 
@@ -27,6 +28,14 @@ Upload the "Auto Upload Images" plugin to your blog, Activate it.
 No, Just Activate it :)
 
 == Changelog ==
+
+= 1.2 =
+
+* Fixed Bug: Save one revision post
+* Fixed Bug: Fix pattern of urls
+* Fixed Bug: Save file with same name
+* Fixed Bug: More images with same urls in post
+* Fixed Bug: Work with ssl urls
 
 = 1.1 =
 
