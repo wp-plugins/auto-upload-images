@@ -3,7 +3,7 @@
 Plugin Name: Auto Upload Images
 Plugin URI: http://p30design.net/1391/08/wp-auto-upload-images.html
 Description: Automatically upload external images of a post to wordpress upload directory
-Version: 1.2
+Version: 1.3
 Author: Ali Irani
 Author URI: http://p30design.net
 License: GPLv2 or later
@@ -41,7 +41,7 @@ function wp_auto_upload_images( $post_id ) {
 				$new_images_url[] = $image_url;
 			}
 		}
-	
+		
 		$total = count($new_images_url);
 		
 		for ($i = 0; $i <= $total-1; $i++) {
@@ -68,8 +68,10 @@ function wp_get_images_url( $content ) {
 			$images_url[] = $url[2];
 	}
 
-	$images_url = array_unique($images_url);
-	rsort($images_url);
+	if (is_array($images_url)) {
+		$images_url = array_unique($images_url);
+		rsort($images_url);
+	}
 	
 	return isset($images_url) ? $images_url : false;
 }
@@ -110,10 +112,7 @@ function wp_get_base_url( $url ) {
  * @return new $url or false
  */
 function wp_save_image($url, $post_id = 0) {
-	if(preg_match('/\/([a-z0-9\-_\+\.]+\.[a-z0-9]+)$/i', $url, $m))
-		$image_name = $m[1];
-	else 
-		return false;
+	$image_name = basename($url);
 	
 	$upload_dir = wp_upload_dir(date('Y/m'));
 	$path = $upload_dir['path'] . '/' . $image_name;
@@ -145,7 +144,6 @@ function wp_save_image($url, $post_id = 0) {
 		file_put_contents($path, $data);
 		
 		$wp_filetype = wp_check_filetype($new_image_url);
-		$filename = $upload_dir['path'];
 		$attachment = array(
 			'guid' => $new_image_url, 
 			'post_mime_type' => $wp_filetype['type'],
@@ -153,7 +151,7 @@ function wp_save_image($url, $post_id = 0) {
 			'post_content' => '',
 			'post_status' => 'inherit'
 		);
-		wp_insert_attachment($attachment, $new_image_url, $post_id);
+		wp_insert_attachment($attachment, $path, $post_id);
 		
 		return $new_image_url;
 	} else {

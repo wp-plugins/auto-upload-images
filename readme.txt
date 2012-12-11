@@ -29,6 +29,10 @@ No, Just Activate it :)
 
 == Changelog ==
 
+= 1.3 =
+
+* Fixed some bugs
+
 = 1.2 =
 
 * Fixed Bug: Save one revision post
