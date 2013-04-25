@@ -3,7 +3,7 @@ Contributors: airani
 Donate link: http://p30design.net/about/contact
 Tags: upload, auto, image, automaticlly, images, admin, post
 Requires at least: 2.7
-Tested up to: 3.4.2
+Tested up to: 3.5.1
 Stable tag: trunk
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
