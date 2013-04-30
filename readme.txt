@@ -29,6 +29,10 @@ No, Just Activate it :)
 
 == Changelog ==
 
+= 1.4.1 =
+
+* Fixed Bug: Fixed tiny bug ;) Thanks to Ali for reporting bug
+
 = 1.4 =
 
 * New Feature: Work With Multi Address Sites

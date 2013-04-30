@@ -3,7 +3,7 @@
 Plugin Name: Auto Upload Images
 Plugin URI: http://p30design.net/1391/08/wp-auto-upload-images.html
 Description: Automatically upload external images of a post to wordpress upload directory
-Version: 1.4
+Version: 1.4.1
 Author: Ali Irani
 Author URI: http://p30design.net
 License: GPLv2 or later
@@ -92,21 +92,29 @@ class wp_auto_upload {
 		$url = $this->wp_get_base_url($url);
 		$myurl = $this->wp_get_base_url(get_bloginfo('url'));
 		
-		return ($myurl == $url) ? true : false;
+		switch ($url) {	
+			case NULL:
+			case $myurl:
+				return true;
+				break;
+
+			default:
+				return false;
+				break;
+		}
 	}
 
 	/**
 	 * Give a $url and return Base of a $url
 	 *
 	 * @param $url
-	 * @return $url
+	 * @return base of $url without wwww
 	 */
 	public function wp_get_base_url( $url ) {
-		$url_pattern = "/^(www(2|3)?\.)/i";
-		$url = parse_url($url, PHP_URL_HOST);
-		$temp = preg_split('/^(www(2|3)?\.)/i', $url, -1, PREG_SPLIT_NO_EMPTY);
+		$url = parse_url($url, PHP_URL_HOST); // Give base URL
+		$temp = preg_split('/^(www(2|3)?\.)/i', $url, -1, PREG_SPLIT_NO_EMPTY); // Delete www from URL
 		
-		return $url = $temp[0];
+		return $temp[0];
 	}
 
 	/**
