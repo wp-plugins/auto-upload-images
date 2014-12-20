@@ -3,7 +3,7 @@
 Plugin Name: Auto Upload Images
 Plugin URI: http://p30design.net/1391/08/wp-auto-upload-images.html
 Description: Automatically upload external images of a post to Wordpress upload directory
-Version: 1.6
+Version: 2.0
 Author: Ali Irani
 Author URI: http://p30design.net
 Text Domain: auto-upload-images
@@ -12,345 +12,275 @@ License: GPLv2 or later
 
 class WP_Auto_Upload {
 
-	public $base_url;
-	public $options;
+    /**
+     * Base of siteurl
+     * @var string
+     */
+    public $site_url;
 
-	public function __construct() {
-		$defaults['base_url'] = get_bloginfo('url');
-		$defaults['image_name'] = '%filename%';
-		$this->options = get_option('aui-setting', $defaults);
-		$this->base_url = $this->get_base_url($this->options['base_url']);
+    /**
+     * All options in array
+     * @var array
+     */
+    public $options;
 
-		$this->options = wp_parse_args($this->options, $defaults);
+    public function __construct() {
+        $defaults['base_url'] = get_bloginfo('url');
+        $defaults['image_name'] = '%filename%';
+        $this->options = get_option('aui-setting', $defaults);
+        $this->options = wp_parse_args($this->options, $defaults);
+        $this->site_url = $this->get_host_url($this->options['base_url']);
+        add_action('plugins_loaded', array($this, 'init'));
+        add_action('save_post', array($this, 'auto_upload'));
+        add_action('admin_menu', array($this, 'admin_menu'));
+    }
+    /**
+     * Automatically upload external images of a post to Wordpress upload directory
+     *
+     * @param int $post_id
+     */
+    public function auto_upload($post_id) {
 
-		add_action('plugins_loaded', array($this, 'init'));
-		add_action('save_post', array($this, 'auto_upload'));
-		add_action('admin_menu', array($this, 'admin_menu'));
-	}
-	/**
-	 * Automatically upload external images of a post to Wordpress upload directory
-	 *
-	 * @param int $post_id
-	 */
-	public function auto_upload( $post_id ) {
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            return;
+        }
+            
+        if (defined('DOING_AJAX') && DOING_AJAX) {
+            return;
+        }
+        
+        if (false !== wp_is_post_revision($post_id)) {
+            return;
+        }
+            
+        global $wpdb;
 
-		if ( defined('DOING_AUTOSAVE') && DOING_AUTOSAVE ) 
-			return;
-			
-		if ( defined( 'DOING_AJAX' ) && DOING_AJAX ) 
-	        return;
-		
-		if ( false !== wp_is_post_revision($post_id) )
-			return;
-			
-		global $wpdb;
+        $content = $wpdb->get_var("SELECT `post_content` FROM {$wpdb->posts} WHERE ID='$post_id'");
 
-		$content = $wpdb->get_var("SELECT `post_content` FROM {$wpdb->posts} WHERE ID='$post_id'");
+        $image_urls = $this->get_image_urls($content);
+        
+        if ($image_urls) {
+            foreach ($image_urls as $image_url) {
+                if ($this->is_allowed($image_url) && $new_image_url = $this->save_image($image_url, $post_id)) {
+                    // find image url in content and replace new image url
+                    $new_image_url = parse_url($new_image_url);
+                    $base_url = $this->site_url == null ? null : "http://{$this->site_url}";
+                    $new_image_url = $base_url . $new_image_url['path'];
+                    $content = preg_replace('/'. preg_quote($image_url, '/') .'/', $new_image_url, $content);
+                }
+            }
+            
+            return $wpdb->update(
+                $wpdb->posts,
+                array('post_content' => $content),
+                array('ID' => $post_id)
+            );
+        }
+        return false;
+    }
+    /**
+     * Save image on wp_upload_dir
+     * Add image to the media library and attach in the post
+     *
+     * @param string $url image url
+     * @param int $post_id
+     * @return string new image url
+     */
+    public function save_image($url, $post_id = 0) {
 
-		$image_urls = $this->get_image_urls($content);
-		
-		if ($image_urls) {
+        if (!function_exists('curl_init')) {
+            return;
+        }
+        
+        setlocale(LC_ALL, "en_US.UTF8");
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);     
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2); 
+        $image_data = curl_exec($ch);
 
-			foreach ($image_urls as $image_url) {
+        if ($image_data === false) {
+            return;
+        }
 
-				if ($this->is_allowable_url($image_url)) {
+        $image_type = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+        $image_size = curl_getinfo($ch, CURLINFO_SIZE_DOWNLOAD);
+        $image_file_name = basename($url);
+        $image_name = $this->get_image_custom_name($image_file_name);
+        $upload_dir = wp_upload_dir(date('Y/m'));
+        $image_path = urldecode($upload_dir['path'] . '/' . $image_name);
+        $image_url = urldecode($upload_dir['url'] . '/' . $image_name);
+        
+        // check if file with same name exists in upload path, rename file
+        while (file_exists($image_path)) {
+            if ($image_size == filesize($image_path)) {
+                return $image_url;
+            } else {
+                $num = rand(1, 99);
+                $image_path = urldecode($upload_dir['path'] . '/' . $num . '_' . $image_name); 
+                $image_url = urldecode($upload_dir['url'] . '/' . $num . '_' . $image_name);
+            }
+        }
+        
+        curl_close($ch);
+        file_put_contents($image_path, $image_data);
 
-					if ($new_image_url = $this->save_image($image_url, $post_id)) { // save image and return new url
-						// find image url in content and replace new image url
-						$new_image_url = parse_url($new_image_url);
-						$base_url = $this->base_url == null ? null : "http://{$this->base_url}";
-						$new_image_url = $base_url . $new_image_url['path'];
-						$content = preg_replace('/'. preg_quote($image_url, '/') .'/', $new_image_url, $content);
-					}
-				}
-			}
-			
-			$wpdb->update(
-				$wpdb->posts,
-				array( 'post_content' => $content ),
-				array( 'ID' => $post_id )
-			);
+        // if set max width and height resize image
+        if ((isset($this->options['max_width']) && $this->options['max_width']) ||
+            (isset($this->options['max_height']) && $this->options['max_height'])) {
+            $width = isset($this->options['max_width']) ? $this->options['max_width'] : null;
+            $height = isset($this->options['max_height']) ? $this->options['max_height'] : null;
+            $image_resized = image_make_intermediate_size($image_path, $width, $height);
+            $image_url = urldecode($upload_dir['url'] . '/' . $image_resized['file']);
+        }
+        
+        $attachment = array(
+            'guid' => $image_url,
+            'post_mime_type' => $image_type,
+            'post_title' => preg_replace('/\.[^.]+$/', '', $image_name),
+            'post_content' => '',
+            'post_status' => 'inherit'
+        );
+        $attach_id = wp_insert_attachment($attachment, $image_path, $post_id);
+        $attach_data = wp_generate_attachment_metadata($attach_id, $image_path);
+        wp_update_attachment_metadata($attach_id, $attach_data);
 
-		}
+        return $image_url;
+    }
 
-	}
-	/**
-	 * Save image on wp_upload_dir
-	 * Add image to Media Library and attach to post
-	 *
-	 * @param string $url
-	 * @param int $post_id
-	 * @return string $out address or false
-	 */
-	public function save_image( $url, $post_id = 0 ) {
+    /**
+     * find image urls in content and retrive urls by array
+     *
+     * @param $content
+     * @return array
+     */
+    public function get_image_urls($content) {
+        $pattern = '/<img[^>]*src=["\']([^"\']*)[^"\']*["\'][^>]*>/i'; // find img tags and retrive src
+        preg_match_all($pattern, $content, $urls, PREG_SET_ORDER);
 
-		$image_name = $this->get_image_name(basename($url));
-		$upload_dir = wp_upload_dir(date('Y/m'));
-		$path = $upload_dir['path'] . '/' . $image_name;
-		$new_image_url = $upload_dir['url'] . '/' . rawurlencode($image_name);
-		$file_exists = true;
-		$i = 0;
-		
-		while ( $file_exists ) {
-			if ( file_exists($path) ) {
-				if ( $this->get_file_size($url) == filesize($path) ) {
-					return $new_image_url;
-				} else {
-					$i++;
-					$path = $upload_dir['path'] . '/' . $i . '_' . $image_name;	
-					$new_image_url = $upload_dir['url'] . '/' . $i . '_' . $image_name;
-				}
-			} else {
-				$file_exists = false;
-			}
-		}
-		
-		if (function_exists('curl_init')) {
-			$ch = curl_init($url);
-			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);     
-			curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2); 
-			$data = curl_exec($ch);
-			curl_close($ch);
-			file_put_contents($path, $data);
-			
-			$wp_filetype = wp_check_filetype($new_image_url);
-			$attachment = array(
-				'guid' => $new_image_url, 
-				'post_mime_type' => $wp_filetype['type'],
-				'post_title' => preg_replace('/\.[^.]+$/', '', basename($new_image_url)),
-				'post_content' => '',
-				'post_status' => 'inherit'
-			);
-			$attach_id = wp_insert_attachment($attachment, $path, $post_id);
-			$attach_data = wp_generate_attachment_metadata($attach_id, $path);
-			wp_update_attachment_metadata($attach_id, $attach_data);
-			
-			$out = $new_image_url;
-		} else {
-			$out = false;
-		}
+        if (isset($urls)) {
+            foreach ($urls as &$url) {
+                $url = $url[1];
+            }
+            return array_unique($urls);
+        }
+        return;
+    }
 
-		return $out;
-	}
+    /**
+     * Return custom image name with user rules
+     * 
+     * @param  string  $filename 
+     * @return string  custom file name
+     */
+    public function get_image_custom_name($filename) {
+        preg_match('/(.*)?(\.+[^.]*)$/', $filename, $name_parts);
 
-	/**
-	 * Detect url of images which exists in content
-	 *
-	 * @param $content
-	 * @return array of urls or false
-	 */
-	public function get_image_urls( $content ) {
-		preg_match_all('/<img[^>]*src=("|\')([^(\?|#|"|\')]*)(\?|#)?[^("|\')]*("|\')[^>]*\/?>/', $content, $urls, PREG_SET_ORDER);
-		
-		if(is_array($urls)) {
-			foreach ($urls as $url)
-				$image_urls[] = $url[2];
-		}
+        $name = $name_parts[1];
+        $postfix = $name_parts[2];
 
-		if (is_array($image_urls)) {
-			$image_urls = array_unique($image_urls);
-			rsort($image_urls);
-		}
+        $pattern_rule = $this->options['image_name'];
+        preg_match_all('/%[^%]*%/', $pattern_rule, $rules);
 
-		return isset($image_urls) ? $image_urls : false;
-	}
+        $patterns = array(
+            '%filename%' => $name,
+            '%date%' => date('Y-m-j'),
+            '%year%' => date('Y'),
+            '%month%' => date('m'),
+            '%day%' => date('j'),
+            '%url%' => $this->get_host_url(get_bloginfo('url')),
+        );
 
-	/**
-	 * Return custom image name
-	 * 
-	 * @param string $name orginal name
-	 * @return string new name of file
-	 */
-	public function get_image_name( $name ) {
-		preg_match('/(.*)?(\.+[^.]*)$/', $name, $matches);
-		$name = $matches[1];
-		$postfix = $matches[2];
+        if ($rules[0]) {
+            foreach ($rules[0] as $rule) {
+                $pattern_rule = preg_replace("/$rule/", $patterns[$rule] ? $patterns[$rule] : $rule, $pattern_rule);
+            }
+            return $pattern_rule . $postfix;
+        }
 
-		$pattern = $this->options['image_name'];
-		preg_match_all('/%[^%]*%/', $pattern, $matches);
+        return $filename;
+    }
 
-		foreach ($matches[0] as $match) { 
-			switch ($match) {
-				case '%filename%':
-					$replacement = $name;
-					$pattern = preg_replace('/' . $match . '/', $replacement, $pattern);
-					break;
+    /**
+     * Check url is allowed to upload or not
+     *
+     * @param string $url this url check is allowable or not
+     * @param string $site_url host of site url
+     * @return bool true | false
+     */
+    public function is_allowed($url) {
+        $url = $this->get_host_url($url);
+        $site_url = ($this->site_url == null) ? $this->get_host_url(site_url('url')) : $this->site_url;
 
-				case '%date%':
-					$replacement = date('Y-m-j');
-					$pattern = preg_replace('/' . $match . '/', $replacement, $pattern);
-					break;
+        if ($url === $site_url || empty($url)) {
+            return false;
+        }
 
-				case '%url%':
-					$replacement = $this->get_base_url(get_bloginfo('url'));
-					$pattern = preg_replace('/' . $match . '/', $replacement, $pattern);
-					break;
+        if ($this->options['exclude_urls']) {
+             $exclude_urls = explode("\n", $this->options['exclude_urls']);
 
-				default:
-					break;
-			}
+            foreach ($exclude_urls as $exclude_url) {
+                if ($url === $this->get_host_url(trim($exclude_url))) {
+                    return false;
+                }
+            }
+        }
 
-		}
+        return true;
+    }
 
-		return $pattern . $postfix;
-	}
+    /**
+     * Return host of $url without www
+     *
+     * @param string $url
+     * @return string host url
+     */
+    public function get_host_url($url) {
+        $url = parse_url($url, PHP_URL_HOST); // Give base URL
+        $url = preg_split('/^(www(2|3)?\.)/i', $url, -1, PREG_SPLIT_NO_EMPTY); // Delete www from URL
+        return $url[0];
+    }
 
-	/**
-	 * Check url is allowed to upload
-	 *
-	 * @param string $url
-	 * @param string $base_url base of site url
-	 * @return bool
-	 */
-	public function is_allowable_url( $url ) {
-		$url = $this->get_base_url($url);
-		$base_url = ($url == null) ? $this->get_base_url(site_url('url')) : $this->base_url;
-		$exclude_urls = $this->options['exclude_urls'];
+    /**
+     * Add settings page under options menu
+     */
+    public function admin_menu() {
+        add_options_page(
+            __('Auto Upload Images Settings', 'auto-upload-images'),
+            __('Auto Upload Images', 'auto-upload-images'),
+            'manage_options',
+            'auto-upload', 
+            array($this, 'settings_page')
+        );
+    }
 
-		// check exclude urls
-		if ($exclude_urls) {
-			preg_match_all('/.*\S/', $exclude_urls, $urls);
+    /**
+     * Settings page contents
+     */ 
+    public function settings_page() {
 
-			for ($i = 0; $i < count($urls[0]); $i++)
-				if ($url == $this->get_base_url($urls[0][$i]))
-					return false;
-		}
+        if (isset($_POST['submit'])) {
+            $this->options['base_url'] = $_POST['base_url'];
+            $this->options['image_name'] = $_POST['image_name'];
+            $this->options['exclude_urls'] = $_POST['exclude_urls'];
+            $this->options['max_width'] = $_POST['max_width'];
+            $this->options['max_height'] = $_POST['max_height'];
+            update_option('aui-setting', $this->options);
+            $message = true;
+        }
 
-		// check base url
-		switch ($url) {	
-			case null:
-			case $base_url:
-				return false;
-				break;
+        if (!function_exists('curl_init')) {
+            $curl_error = true;
+        }
+        
+        include_once('settings_page.php');
+    }
 
-			default:
-				return true;
-				break;
-		}
-	}
-
-	/**
-	 * Return base url without www
-	 *
-	 * @param string $url
-	 * @return string $out base url
-	 */
-	public function get_base_url( $url ) {
-		$url = parse_url($url, PHP_URL_HOST); // Give base URL
-		$out = preg_split('/^(www(2|3)?\.)/i', $url, -1, PREG_SPLIT_NO_EMPTY); // Delete www from URL
-		
-		return $out[0];
-	}
-
-	/**
-	 * Return size of external file
-	 *
-	 * @param $file
-	 * @return $size
-	 */
-	public function get_file_size( $file ) {
-		$ch = curl_init($file);
-	    curl_setopt($ch, CURLOPT_NOBODY, true);
-	    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-	    curl_setopt($ch, CURLOPT_HEADER, true);
-	    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, FALSE);     
-		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2); 
-	    $data = curl_exec($ch);
-	    curl_close($ch);
-
-	    if (preg_match('/Content-Length: (\d+)/', $data, $matches))
-	        return $contentLength = (int)$matches[1];
-		else
-			return false;
-	}
-
-	/**
-	 * Add settings page under options menu
-	 */
-	public function admin_menu() {
-		add_options_page(__('Auto Upload Images Settings', 'auto-upload-images'),__('Auto Upload Images', 'auto-upload-images'),'manage_options','auto-upload', array($this, 'settings_page'));
-	}
-
-	/**
-	 * Settings page contents
-	 */	
-	public function settings_page() {
-
-		if (isset($_POST['submit'])) {
-			$this->options['base_url'] = $_POST['base_url'];
-			$this->options['image_name'] = $_POST['image_name'];
-			$this->options['exclude_urls'] = $_POST['exclude_urls'];
-			update_option('aui-setting', $this->options);
-			$message = true;
-		}
- 		
-		//Start the output buffer
-		ob_start(); 
-		
-		?>
-
-		<div class="wrap">
-		    <?php screen_icon('options-general'); ?> <h2><?php _e('Auto Upload Images Settings', 'auto-upload-images'); ?></h2>
-		    
-		    <?php if ($message == true) : ?>
-			<div id="setting-error-settings_updated" class="updated settings-error">
-				<p><strong><?php _e('Settings Saved.', 'auto-upload-images'); ?></strong></p>
-			</div>
-			<?php endif; ?>
-
-		    <form method="POST">
-		        <table class="form-table">
-		            <tr valign="top">
-		                <th scope="row">
-		                    <label for="base_url">
-		                        <?php _e('Base URL:', 'auto-upload-images'); ?>
-		                    </label> 
-		                </th>
-		                <td>
-		                    <input type="text" name="base_url" value="<?php echo $this->options['base_url']; ?>" class="regular-text" dir="ltr" />
-		                    <p class="description"><?php _e('If you need to choose a new base URL for the images that will be automatically uploaded. Ex:', 'auto-upload-images'); ?> <code>http://p30design.net</code>, <code>http://cdn.p30design.net</code>, <code>/</code></p>
-		                </td>
-		            </tr>
-		            <tr valign="top">
-		                <th scope="row">
-		                    <label for="image_name">
-		                        <?php _e('Image Name:', 'auto-upload-images'); ?>
-		                    </label> 
-		                </th>
-		                <td>
-		                    <input type="text" name="image_name" value="<?php echo $this->options['image_name']; ?>" class="regular-text" dir="ltr" />
-		                    <p class="description"><?php _e('Choose a custom filename for the new images will be uploaded. You can also use these shortcodes <code dir="ltr">%filename%</code>, <code dir="ltr">%url%</code>, <code dir="ltr">%date%</code>.', 'auto-upload-images'); ?></p>
-		                </td>
-		            </tr>
-		            <tr valign="top">
-		            	<th scope="row">
-		            		<label for="exclude_urls">
-		            			<?php _e('Exclude Domains:', 'auto-upload-images'); ?>
-		            		</label>
-		            	</th>
-		            	<td>
-		            		<p><?php _e('Enter the domains you wish to be excluded from uploading images: (One domain per line)', 'auto-upload-images'); ?></p>
-		            		<p><textarea name="exclude_urls" rows="10" cols="50" id="exclude_urls" class="large-text code" placeholder="http://p30design.net"><?php echo $this->options['exclude_urls']; ?></textarea></p>
-		            	</td>
-		            </tr>
-		        </table>
-		        <?php submit_button(); ?>
-		    </form>
-		</div>
-		
-		<?php
-
-		//Get output buffer contents
-		ob_get_flush();
-
-	}
-	/**
-	 * Initial plugin textdomain for localization
-	 */
-	public function init() {
-		load_plugin_textdomain('auto-upload-images', false, basename(dirname(__FILE__)) . '/lang');
-	}
+    /**
+     * Initial plugin textdomain for localization
+     */
+    public function init() {
+        load_plugin_textdomain('auto-upload-images', false, basename(dirname(__FILE__)) . '/lang');
+    }
 }
 new WP_Auto_Upload;
