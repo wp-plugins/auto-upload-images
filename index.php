@@ -3,7 +3,7 @@
 Plugin Name: Auto Upload Images
 Plugin URI: http://p30design.net/1391/08/wp-auto-upload-images.html
 Description: Automatically upload external images of a post to Wordpress upload directory
-Version: 2.0
+Version: 2.1
 Author: Ali Irani
 Author URI: http://p30design.net
 Text Domain: auto-upload-images
@@ -178,6 +178,10 @@ class WP_Auto_Upload {
 
         $name = $name_parts[1];
         $postfix = $name_parts[2];
+
+        if (preg_match('/^(\.[^?]*)\?.*/i', $postfix, $postfix_extra)) {
+            $postfix = $postfix_extra[1];
+        }
 
         $pattern_rule = $this->options['image_name'];
         preg_match_all('/%[^%]*%/', $pattern_rule, $rules);
